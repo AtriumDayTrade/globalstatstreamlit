@@ -1,0 +1,9 @@
+﻿dash
+plotly
+yfinance
+pandas
+numpy
+MetaTrader5
+scikit-learn
+fitter
+scipy
