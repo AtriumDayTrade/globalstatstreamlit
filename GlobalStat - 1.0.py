@@ -8,8 +8,19 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import MetaTrader5 as mt5
+
 from dash.dependencies import Input, Output
+
+
+
+# ---- MetaTrader5: tornar opcional no servidor ----
+try:
+    import MetaTrader5 as mt5
+    MT5_OK = True
+except Exception:
+    MT5_OK = False
+
+
 
 # PARTE 1
 # ===================== CONFIGURAÇÃO INICIAL =====================
@@ -24,10 +35,14 @@ interval_ms = 300000
 interval_sec = interval_ms // 1000
 N_BARRAS = 365  # ← usado para definir o número de candles ao puxar dados do MT5
 
-timeframes_dict = {
-    'D1': mt5.TIMEFRAME_D1,
-    'H4': mt5.TIMEFRAME_H4
-}
+if MT5_OK:
+    timeframes_dict = {
+        'D1': mt5.TIMEFRAME_D1,
+        'H4': mt5.TIMEFRAME_H4
+    }
+else:
+    # Sem MT5 (ex.: no Render) usamos apenas rótulos
+    timeframes_dict = {'D1': 'D1', 'H4': 'H4'}
 
 ativos_comp = {
     'EURUSD.r': 1.0000, 'GBPUSD.r': 1.2000, 'USDJPY.r': 140.00,
@@ -83,6 +98,8 @@ def obter_dados_cripto(ticker):
         return pd.DataFrame()
 
 def coletar(simbolo, timeframe):
+    if not MT5_OK:
+        return None
     if not mt5.initialize():
         print("Erro ao inicializar MT5")
         return None
@@ -984,14 +1001,15 @@ def update_dashboard(n):
     return columns
 
 
-
-
 # ===================== EXECUÇÃO DO APP =====================
+import os
+
 if __name__ == "__main__":
-    app.run(debug=True, port=8050)
-
-
-
+    app.run_server(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 10000)),
+        debug=False
+    )
 
 
 
