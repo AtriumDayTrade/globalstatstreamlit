@@ -342,12 +342,17 @@ def gerar_range_index_plotly(timeframe_label, ativos_visiveis=None):
     return fig
 
 
+
 #===================================================================
 # Função Range Comparativo (com suavizacao EMA)
 #===================================================================
 def gerar_range_comparativo_plotly(timeframe_label, ativos_visiveis=None):
+    if not MT5_OK:
+        return go.Figure()  # servidor sem MT5 → evita NameError
+
     timeframe = timeframes_dict[timeframe_label]
     df_final = pd.DataFrame()
+
 
     for ativo, base in ativos_comp.items():
         rates = mt5.copy_rates_from_pos(ativo, timeframe, 0, N_BARRAS)
