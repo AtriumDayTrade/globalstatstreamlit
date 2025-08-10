@@ -185,12 +185,18 @@ def gamma_exposure(options, spot, rate=0.05):
         return pd.Series([0]*len(options))
 # ========================= Funções Principais ===============================
 
+
 # ===================================================================
-# Função Range Index 
+# Função Range Index
 # ===================================================================
 def gerar_range_index_plotly(timeframe_label, ativos_visiveis=None):
+    if not MT5_OK:
+        return go.Figure()  # sem MT5 no servidor
+
     timeframe = timeframes_dict[timeframe_label]
     df_final = pd.DataFrame()
+    ...
+
 
     cores_ativos = {'USDX': 'white'}
     cores_ativos.update({
