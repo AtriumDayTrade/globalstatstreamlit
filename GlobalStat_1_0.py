@@ -1,3 +1,7 @@
+
+print("Deploy novo - 10/08 - 17h45")
+
+
 # ===================== GLOBALSTAT 3.0 - APP COMPLETO =====================
 
 import dash
@@ -1014,16 +1018,24 @@ def update_dashboard(n):
 
 # ===================== EXECUÇÃO DO APP =====================
 import os
+import socket
 
 if __name__ == "__main__":
-    app.run_server(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
-        debug=False
+    porta = int(os.environ.get("PORT", 8050))  # Porta da nuvem ou padrão local
+    host_local = socket.gethostname()
+
+    # Detecta se está rodando localmente ou na nuvem
+    if os.environ.get("PORT"):
+        host_ip = "0.0.0.0"  # Nuvem
+    else:
+        host_ip = "127.0.0.1"  # Local
+
+    print(f"🚀 Servidor rodando em http://{host_ip}:{porta}")
+    app.run(
+        host=host_ip,
+        port=porta,
+        debug=not bool(os.environ.get("PORT"))
     )
-
-
-
 
 
 
