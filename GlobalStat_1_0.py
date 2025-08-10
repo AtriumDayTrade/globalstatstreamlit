@@ -118,6 +118,9 @@ def coletar(simbolo, timeframe):
 
 import time
 
+# ============================
+# Função para buscar opções
+# ============================
 def get_options_data(ticker, tentativas=3, espera=2):
     try:
         stock = yf.Ticker(ticker)
@@ -136,7 +139,7 @@ def get_options_data(ticker, tentativas=3, espera=2):
             print(f"[AVISO] Nenhuma data de expiração encontrada para {ticker} após {tentativas} tentativas.")
             return pd.DataFrame(), pd.DataFrame(), np.nan, None
 
-        # ▶️ Tenta com a primeira expiração
+        # ▶️ Primeira tentativa
         exp_date = expirations[0]
         try:
             opt_chain = stock.option_chain(exp_date)
@@ -156,12 +159,12 @@ def get_options_data(ticker, tentativas=3, espera=2):
             else:
                 return pd.DataFrame(), pd.DataFrame(), np.nan, None
 
-        # 🔒 Validação final
+        # 🔒 Validação
         if calls is None or puts is None or calls.empty or puts.empty:
             print(f"[ERRO] Option chain inválida para {ticker}")
             return pd.DataFrame(), pd.DataFrame(), np.nan, None
 
-        # 🧠 Data de expiração e preço spot
+        # 🧠 Spot e expiração
         calls['expiration'] = pd.to_datetime(exp_date)
         puts['expiration'] = pd.to_datetime(exp_date)
 
@@ -173,6 +176,7 @@ def get_options_data(ticker, tentativas=3, espera=2):
     except Exception as e:
         print(f"[EXCEÇÃO] Erro ao obter dados de {ticker}: {e}")
         return pd.DataFrame(), pd.DataFrame(), np.nan, None
+
 
 def gamma_exposure(options, spot, rate=0.05):
     try:
@@ -958,8 +962,26 @@ def update_dashboard(n):
         last_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         if calls.empty or puts.empty or np.isnan(spot):
+            aviso = f"📡 Sem dados no momento para {ativo}"
+            
             fig_strike = go.Figure()
+            fig_strike.add_annotation(
+                text=aviso,
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=18, color="red")
+            )
+            fig_strike.update_layout(template='plotly_dark', height=400)
+        
             fig_profile = go.Figure()
+            fig_profile.add_annotation(
+                text=aviso,
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=18, color="red")
+            )
+            fig_profile.update_layout(template='plotly_dark', height=400)
+
         else:
             calls_gamma = gamma_exposure(calls, spot)
             puts_gamma = gamma_exposure(puts, spot)
