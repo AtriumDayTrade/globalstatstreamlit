@@ -14,10 +14,6 @@ from dash import dcc, html, State
 from dash.dependencies import Input, Output
 from plotly.subplots import make_subplots
 
-# ========== CONFIGURAÇÕES GERAIS/PRODUÇÃO ==========
-# Evita prints de warning do numpy em logs
-np.seterr(all="ignore")
-
 # ========== CACHE (TTL) + DOWNLOAD EM LOTE PARA YFINANCE ==========
 class YFCache:
     def __init__(self, ttl_seconds=180):
@@ -44,93 +40,40 @@ def _yf_key(symbols, period, interval):
         symbols = ','.join(sorted(list(symbols)))
     return f"{symbols}|{period}|{interval}"
 
-def _flatten_multiindex_batch(df_batch, symbols):
-    out = {}
-    if isinstance(df_batch, pd.DataFrame) and not df_batch.empty:
-        if hasattr(df_batch, "columns") and isinstance(df_batch.columns, pd.MultiIndex):
-            # MultiIndex: separar por ticker
-            for sym in symbols:
-                try:
-                    part = df_batch.xs(sym, axis=1, level=0, drop_level=False)
-                    part.columns = part.columns.get_level_values(1)
-                    out[sym] = part.copy()
-                except Exception:
-                    out[sym] = pd.DataFrame()
-        else:
-            for sym in symbols:
-                out[sym] = df_batch.copy()
-    else:
-        for sym in symbols:
-            out[sym] = pd.DataFrame()
-    return out
-
-def _chunks(lst, size):
-    for i in range(0, len(lst), size):
-        yield lst[i:i+size]
-
-def yf_download_cached(symbols, period, interval, max_retries=2, backoff=1.5):
+def yf_download_cached(symbols, period, interval):
     """
     Faz UMA chamada ao Yahoo para vários símbolos e guarda em cache (TTL).
     Retorna: {symbol: DataFrame OHLC}
-    - Protegido contra JSONDecodeError / HTML de erro.
-    - Fallback por chunks se o batch falhar.
     """
     key = _yf_key(symbols, period, interval)
     cached = YF_CACHE.get(key)
     if cached is not None:
         return cached
 
-    sym_list = [symbols] if isinstance(symbols, str) else list(symbols)
-
-    # 1) tentativa em lote
-    last_exc = None
-    df = pd.DataFrame()
-    for att in range(max_retries + 1):
-        try:
-            df = yf.download(
-                sym_list, period=period, interval=interval,
-                auto_adjust=False, progress=False, threads=False, group_by='ticker'
-            )
-            break
-        except Exception as e:
-            last_exc = e
-            # backoff com pequeno jitter
-            time.sleep((backoff ** att) + random.random() * 0.3)
-
-    if isinstance(df, pd.DataFrame) and not df.empty:
-        result = _flatten_multiindex_batch(df, sym_list)
-        YF_CACHE.set(key, result)
-        return result
-
-    # 2) fallback: baixar em chunks menores
-    if last_exc:
-        print(f"[YF ERROR] batch download {sym_list} {period} {interval}: {last_exc}")
+    try:
+        df = yf.download(
+            symbols, period=period, interval=interval,
+            auto_adjust=False, progress=False, threads=False, group_by='ticker'
+        )
+    except Exception as e:
+        print(f"[YF ERROR] download {symbols} {period} {interval}: {e}")
+        df = pd.DataFrame()
 
     result = {}
-    for chunk in _chunks(sym_list, 6):
-        df_chunk = pd.DataFrame()
-        err = None
-        for att in range(max_retries + 1):
-            try:
-                df_chunk = yf.download(
-                    chunk, period=period, interval=interval,
-                    auto_adjust=False, progress=False, threads=False, group_by='ticker'
-                )
-                break
-            except Exception as e:
-                err = e
-                time.sleep((backoff ** att) + random.random() * 0.3)
-
-        if isinstance(df_chunk, pd.DataFrame) and not df_chunk.empty:
-            result.update(_flatten_multiindex_batch(df_chunk, chunk))
+    if isinstance(symbols, str):
+        result[symbols] = df.copy() if isinstance(df, pd.DataFrame) and not df.empty else pd.DataFrame()
+    else:
+        if isinstance(df, pd.DataFrame) and not df.empty and isinstance(df.columns, pd.MultiIndex):
+            for sym in symbols:
+                try:
+                    part = df.xs(sym, axis=1, level=0, drop_level=False)
+                    part.columns = part.columns.get_level_values(1)
+                    result[sym] = part.copy()
+                except Exception:
+                    result[sym] = pd.DataFrame()
         else:
-            if err:
-                print(f"[YF ERROR] chunk download {chunk} {period} {interval}: {err}")
-            for s in chunk:
-                result[s] = pd.DataFrame()
-
-        # Evita estourar rate limit do Yahoo
-        time.sleep(0.2 + random.random() * 0.2)
+            for sym in symbols:
+                result[sym] = df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
 
     YF_CACHE.set(key, result)
     return result
@@ -148,13 +91,7 @@ def _resample_ohlc_to_4h(df_1h):
                'min' if c=='Low' else
                'sum' if c=='Volume' else
                'last') for c in cols}
-    try:
-        out = df_1h.resample('4H').agg(agg).dropna(how='all')
-    except Exception:
-        # fallback defensivo: apenas close
-        s = df_1h['Close'] if 'Close' in df_1h.columns else df_1h.iloc[:, 0]
-        out = s.resample('4H').last().to_frame('Close').dropna()
-    return out
+    return df_1h.resample('4H').agg(agg).dropna(how='all')
 
 # ===================== CONFIGURAÇÃO INICIAL ====================
 cryptos = [
@@ -169,20 +106,16 @@ interval_sec = interval_ms // 1000
 timeframes_dict = {'D1': 'D1', 'H4': 'H4'}
 
 YF_MAP = {
-    # FX (Yahoo usa pares "XXX=X")
     "EURUSD.r": "EURUSD=X", "GBPUSD.r": "GBPUSD=X", "USDJPY.r": "JPY=X",
     "USDCAD.r": "CAD=X", "USDCHF.r": "CHF=X", "USDSEK.r": "SEK=X",
     "EURGBP.r": "EURGBP=X", "EURJPY.r": "EURJPY=X", "EURCHF.r": "EURCHF=X", "EURAUD.r": "EURAUD=X",
     "GBPJPY.r": "GBPJPY=X", "GBPEUR.r": "GBPEUR=X", "GBPCHF.r": "GBPCHF=X",
     "EURCAD.r": "EURCAD=X", "GBPCAD.r": "GBPCAD=X", "EURSEK.r": "EURSEK=X",
-    # Índices/ETFs
     "US500": "^GSPC", "USDX": "DX-Y.NYB", "VIX": "^VIX", "TLT": "TLT",
-    # Commodities/Cripto
     "GC=F": "GC=F", "BTC-USD": "BTC-USD", "ETH-USD": "ETH-USD", "BNB-USD": "BNB-USD",
     "SOL-USD": "SOL-USD", "ADA-USD": "ADA-USD", "XRP-USD": "XRP-USD", "DOGE-USD": "DOGE-USD",
     "AVAX-USD": "AVAX-USD", "DOT-USD": "DOT-USD", "LTC-USD": "LTC-USD",
     "LINK-USD": "LINK-USD", "ATOM-USD": "ATOM-USD",
-    # Opções (subjacentes)
     "SPY": "SPY", "QQQ": "QQQ", "IWM": "IWM"
 }
 
@@ -258,10 +191,6 @@ def coletar(ticker, timeframe):
     return pd.DataFrame({'time': s.index, 'close': s.values})
 
 def get_options_data(ticker, tentativas=3, espera=2):
-    """
-    Busca cadeia de opções com retries leves (defensivo contra HTML/erros).
-    Retorna (calls_df, puts_df, spot_float, exp_str_escollhida_ou_None)
-    """
     try:
         stock = yf.Ticker(ticker)
         expirations = list(stock.options or [])
@@ -275,19 +204,15 @@ def get_options_data(ticker, tentativas=3, espera=2):
 
         calls = puts = None
         chosen_exp = None
-        # tentar primeiras expirações (evita listas longas)
         for exp_date in expirations[:6]:
             try:
                 chain = stock.option_chain(exp_date)
-                if chain and hasattr(chain, "calls") and hasattr(chain, "puts"):
-                    if not chain.calls.empty and not chain.puts.empty:
-                        calls = chain.calls.copy()
-                        puts  = chain.puts.copy()
-                        chosen_exp = exp_date
-                        break
+                if chain and not chain.calls.empty and not chain.puts.empty:
+                    calls = chain.calls.copy()
+                    puts  = chain.puts.copy()
+                    chosen_exp = exp_date
+                    break
             except Exception:
-                # aguarda um pouco e tenta a próxima expiração
-                time.sleep(0.2)
                 continue
 
         if calls is None or puts is None:
@@ -297,12 +222,8 @@ def get_options_data(ticker, tentativas=3, espera=2):
         calls['expiration'] = exp_ts
         puts['expiration'] = exp_ts
 
-        # preço spot com proteção contra vazio
-        try:
-            spot_hist = stock.history(period='1d', auto_adjust=False)
-            spot = float(spot_hist['Close'].iloc[-1]) if not spot_hist.empty else np.nan
-        except Exception:
-            spot = np.nan
+        spot_hist = stock.history(period='1d', auto_adjust=False)
+        spot = float(spot_hist['Close'].iloc[-1]) if not spot_hist.empty else np.nan
 
         return calls, puts, spot, chosen_exp
 
@@ -440,7 +361,6 @@ def gerar_range_index_plotly(timeframe_label, ativos_visiveis=None):
     span = 100
     for col in ['MediaGrupo', 'FaixaAltaSuave', 'FaixaBaixaSuave',
                 'FaixaAltaInternaSuave2', 'FaixaBaixaInternaSuave2']:
-        # segundo EWM suaviza mais (robusto em dados ruidosos)
         df_final[f'{col}_smooth'] = df_final[col].ewm(span=span).mean().ewm(span=span).mean()
 
     fig = go.Figure()
@@ -680,8 +600,6 @@ def gerar_grafico_vix(timeframe, divisor_macro):
                       margin=dict(l=30, r=20, t=40, b=17), showlegend=False)
     return fig
 
-
-
 # ===================== APP / SERVER =====================
 app = dash.Dash(__name__)
 server = app.server
@@ -785,7 +703,6 @@ app.layout = html.Div(style={"backgroundColor": "black", "padding": "10px"}, chi
     dcc.Interval(id='interval-component', interval=300*1000, n_intervals=0)
 ])
 
-
 # ===================== CALLBACKS =====================
 @app.callback(
     [Output("mini-graficos", "children"), Output("mensagem-erro", "children")],
@@ -806,11 +723,7 @@ def atualizar_mini_graficos(n):
             erros.append("XAU" if cripto == "GC=F" else cripto.replace("-USD","").replace("=F","").replace("X",""))
             continue
 
-        try:
-            df_b2 = calcular_b2(df)
-        except Exception:
-            df_b2 = pd.DataFrame()
-
+        df_b2 = calcular_b2(df)
         if df_b2.empty:
             erros.append("XAU" if cripto == "GC=F" else cripto.replace("-USD","").replace("=F","").replace("X",""))
             continue
@@ -972,9 +885,6 @@ def update_dashboard(n):
 
 # ===================== EXECUÇÃO =====================
 if __name__ == "__main__":
-    # Dash 2.17 funciona com app.run; respeitamos PORT no Render
-    port = int(os.environ.get("PORT", 8060))
+    port = int(os.environ.get("PORT", 8085))
     host = "0.0.0.0" if "PORT" in os.environ else "127.0.0.1"
-    app.run(host=host, port=port, debug=False)
-
-
+    app.run(host=host, port=port, debug=False)  # Dash 3+: use run, não run_server
