@@ -1,7 +1,7 @@
-﻿streamlit>=1.48
-streamlit-authenticator>=0.3
-yfinance>=0.2.55
-plotly>=5.20
-pandas>=2.2
-numpy>=1.26
-pyarrow>=14.0
+﻿streamlit==1.48.1
+streamlit-authenticator==0.4.2
+yfinance==0.2.65
+plotly==5.22.0
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==14.0.2
