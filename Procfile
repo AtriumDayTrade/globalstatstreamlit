@@ -1,1 +1,1 @@
-web: python "GlobalStat - 1.0.py"
+web: gunicorn globalstat:server --workers=2 --threads=4 --timeout=120 --bind 0.0.0.0:$PORT
