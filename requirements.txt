@@ -1,4 +1,4 @@
-﻿streamlit==1.48.1
+streamlit==1.48.1
 streamlit-authenticator==0.4.2
 yfinance==0.2.65
 plotly==5.22.0

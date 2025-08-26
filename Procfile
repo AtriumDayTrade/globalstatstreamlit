@@ -1,1 +1,1 @@
-web: gunicorn globalstat:server --workers=2 --threads=4 --timeout=120 --bind 0.0.0.0:$PORT
+web: gunicorn globalstat:server -w 2 -k gthread -b 0.0.0.0:$PORT --timeout 120
